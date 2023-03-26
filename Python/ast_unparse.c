@@ -119,6 +119,7 @@ enum {
     PR_TERM,            /* '*', '@', '/', '%', '//' */
     PR_FACTOR,          /* unary '+', '-', '~' */
     PR_POWER,           /* '**' */
+    PR_CAST,
     PR_AWAIT,           /* 'await' */
     PR_ATOM,
 };
@@ -456,6 +457,16 @@ append_ast_dictcomp(_PyUnicodeWriter *writer, expr_ty e)
     APPEND_EXPR(e->v.DictComp.value, PR_TEST);
     APPEND(comprehensions, e->v.DictComp.generators);
     APPEND_STR_FINISH("}");
+}
+
+static int
+append_ast_cast(_PyUnicodeWriter *writer, expr_ty e)
+{
+    APPEND_EXPR(e->v.Cast.value, PR_CAST);
+    APPEND_STR(" cast_as ");
+    APPEND_EXPR(e->v.Cast.type, PR_CAST);
+
+    return 0;
 }
 
 static int
@@ -911,6 +922,8 @@ append_ast_expr(_PyUnicodeWriter *writer, expr_ty e, int level)
         return append_ast_tuple(writer, e, level);
     case NamedExpr_kind:
         return append_named_expr(writer, e, level);
+    case Cast_kind:
+        return append_ast_cast(writer, e);
     // No default so compiler emits a warning for unhandled cases
     }
     PyErr_SetString(PyExc_SystemError,

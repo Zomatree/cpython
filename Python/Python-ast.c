@@ -51,6 +51,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->BoolOp_type);
     Py_CLEAR(state->Break_type);
     Py_CLEAR(state->Call_type);
+    Py_CLEAR(state->Cast_type);
     Py_CLEAR(state->ClassDef_type);
     Py_CLEAR(state->Compare_type);
     Py_CLEAR(state->Constant_type);
@@ -573,6 +574,10 @@ static const char * const DictComp_fields[]={
 static const char * const GeneratorExp_fields[]={
     "elt",
     "generators",
+};
+static const char * const Cast_fields[]={
+    "value",
+    "type",
 };
 static const char * const Await_fields[]={
     "value",
@@ -1324,6 +1329,7 @@ init_types(struct ast_state *state)
         "     | SetComp(expr elt, comprehension* generators)\n"
         "     | DictComp(expr key, expr value, comprehension* generators)\n"
         "     | GeneratorExp(expr elt, comprehension* generators)\n"
+        "     | Cast(expr value, expr type)\n"
         "     | Await(expr value)\n"
         "     | Yield(expr? value)\n"
         "     | YieldFrom(expr value)\n"
@@ -1394,6 +1400,10 @@ init_types(struct ast_state *state)
                                          2,
         "GeneratorExp(expr elt, comprehension* generators)");
     if (!state->GeneratorExp_type) return 0;
+    state->Cast_type = make_type(state, "Cast", state->expr_type, Cast_fields,
+                                 2,
+        "Cast(expr value, expr type)");
+    if (!state->Cast_type) return 0;
     state->Await_type = make_type(state, "Await", state->expr_type,
                                   Await_fields, 1,
         "Await(expr value)");
@@ -2886,6 +2896,34 @@ _PyAST_GeneratorExp(expr_ty elt, asdl_comprehension_seq * generators, int
     p->kind = GeneratorExp_kind;
     p->v.GeneratorExp.elt = elt;
     p->v.GeneratorExp.generators = generators;
+    p->lineno = lineno;
+    p->col_offset = col_offset;
+    p->end_lineno = end_lineno;
+    p->end_col_offset = end_col_offset;
+    return p;
+}
+
+expr_ty
+_PyAST_Cast(expr_ty value, expr_ty type, int lineno, int col_offset, int
+            end_lineno, int end_col_offset, PyArena *arena)
+{
+    expr_ty p;
+    if (!value) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'value' is required for Cast");
+        return NULL;
+    }
+    if (!type) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'type' is required for Cast");
+        return NULL;
+    }
+    p = (expr_ty)_PyArena_Malloc(arena, sizeof(*p));
+    if (!p)
+        return NULL;
+    p->kind = Cast_kind;
+    p->v.Cast.value = value;
+    p->v.Cast.type = type;
     p->lineno = lineno;
     p->col_offset = col_offset;
     p->end_lineno = end_lineno;
@@ -4456,6 +4494,21 @@ ast2obj_expr(struct ast_state *state, void* _o)
                              ast2obj_comprehension);
         if (!value) goto failed;
         if (PyObject_SetAttr(result, state->generators, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        break;
+    case Cast_kind:
+        tp = (PyTypeObject *)state->Cast_type;
+        result = PyType_GenericNew(tp, NULL, NULL);
+        if (!result) goto failed;
+        value = ast2obj_expr(state, o->v.Cast.value);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->value, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        value = ast2obj_expr(state, o->v.Cast.type);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->type, value) == -1)
             goto failed;
         Py_DECREF(value);
         break;
@@ -8920,6 +8973,54 @@ obj2ast_expr(struct ast_state *state, PyObject* obj, expr_ty* out, PyArena*
         if (*out == NULL) goto failed;
         return 0;
     }
+    tp = state->Cast_type;
+    isinstance = PyObject_IsInstance(obj, tp);
+    if (isinstance == -1) {
+        return 1;
+    }
+    if (isinstance) {
+        expr_ty value;
+        expr_ty type;
+
+        if (_PyObject_LookupAttr(obj, state->value, &tmp) < 0) {
+            return 1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"value\" missing from Cast");
+            return 1;
+        }
+        else {
+            int res;
+            if (_Py_EnterRecursiveCall(" while traversing 'Cast' node")) {
+                goto failed;
+            }
+            res = obj2ast_expr(state, tmp, &value, arena);
+            _Py_LeaveRecursiveCall();
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        if (_PyObject_LookupAttr(obj, state->type, &tmp) < 0) {
+            return 1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"type\" missing from Cast");
+            return 1;
+        }
+        else {
+            int res;
+            if (_Py_EnterRecursiveCall(" while traversing 'Cast' node")) {
+                goto failed;
+            }
+            res = obj2ast_expr(state, tmp, &type, arena);
+            _Py_LeaveRecursiveCall();
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        *out = _PyAST_Cast(value, type, lineno, col_offset, end_lineno,
+                           end_col_offset, arena);
+        if (*out == NULL) goto failed;
+        return 0;
+    }
     tp = state->Await_type;
     isinstance = PyObject_IsInstance(obj, tp);
     if (isinstance == -1) {
@@ -11962,6 +12063,9 @@ astmodule_exec(PyObject *m)
     }
     if (PyModule_AddObjectRef(m, "GeneratorExp", state->GeneratorExp_type) < 0)
         {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "Cast", state->Cast_type) < 0) {
         return -1;
     }
     if (PyModule_AddObjectRef(m, "Await", state->Await_type) < 0) {

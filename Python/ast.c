@@ -377,6 +377,10 @@ validate_expr(struct validator *state, expr_ty exp, expr_context_ty ctx)
     case NamedExpr_kind:
         ret = validate_expr(state, exp->v.NamedExpr.value, Load);
         break;
+    case Cast_kind:
+        ret = validate_expr(state, exp->v.Cast.value, Load) &&
+            validate_expr(state, exp->v.Cast.type, Load);
+        break;
     /* This last case doesn't have any checking. */
     case Name_kind:
         ret = 1;

@@ -1704,6 +1704,11 @@ class _Unparser(NodeVisitor):
             self.set_precedence(_Precedence.BOR.next(), *node.patterns)
             self.interleave(lambda: self.write(" | "), self.traverse, node.patterns)
 
+    def visit_Cast(self, node):
+        self.write(node.value)
+        self.write(" -> ")
+        self.write(node.type)
+
 def unparse(ast_obj):
     unparser = _Unparser()
     return unparser.visit(ast_obj)

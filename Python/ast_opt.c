@@ -814,6 +814,9 @@ astfold_expr(expr_ty node_, PyArena *ctx_, _PyASTOptimizeState *state)
     case NamedExpr_kind:
         CALL(astfold_expr, expr_ty, node_->v.NamedExpr.value);
         break;
+    case Cast_kind:
+        CALL(astfold_expr, expr_ty, node_->v.Cast.value);
+        break;
     case Constant_kind:
         // Already a constant, nothing further to do
         break;
